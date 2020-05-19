@@ -1,0 +1,632 @@
+---
+title: "Seminario de Investigacion- Tesis cambios de carrera"
+author: "Elisa Zelaya"
+date: "16/5/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = 'C:/Users/user/Documents/Encuesta')
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(caret)
+library(ggplot2)
+library(imager)
+
+```
+## Introducción
+
+En este análisis vamos a estudiar cuales son los factores más importantes al momento de que un estudiante tome la decisión de realizar un cambio de carrera. La información recopilada se obtuvo mediante encuestas aplicadas a los estudiantes de las carreras de ingeniería de la Universidad Autónoma de Honduras, en este estudio se demuestra la importancia de realizar intervenciones efectivas, en momentos puntuales de la vida universitaria del estudiante, a fin de evitar el incremento de la cantidad de cambios de carrera que se dan en la actualidad.
+
+## Variables capturadas
+```{r reading_dataset, echo=FALSE}
+
+survey<-read.csv("encuesta_limpia.csv", sep=",", header=T)
+
+str(survey)
+```
+
+Como se puede observar se capturaron `r nrow(survey)` observaciones y `r length(names(survey))` columnas, dichas columnas fueron el resultado de las preguntas elaboradas en la encuesta quedando clasificadas en las siguientes categorías:
+
+1. Información demográfica
+2. Información Familiar
+3. Orientación Vocacional
+4. Oferta Académica
+5. Registro
+6. Matricula
+7. Habitos de estudiante
+8. Habilidades personales
+
+A continuación realizamos un resumen de nuestras columnas:
+
+```{r}
+summary(survey)
+```
+
+## Tratamiento de columnas
+Uno de los tratamientos importantes a realizar en cuanto a nuestros datos, es la detección de los valores nulos, esto para obtener una información mas solida, siendo esto muy importante al momento de realizar analisis posteriores.
+
+```{r null_values, echo=FALSE}
+
+na.summary<-c()
+
+for (myname in names(survey)){
+  
+  
+  s<-as.data.frame( prop.table(table(is.na(survey[,myname]))))
+  operacion <-s %>% filter(Var1==TRUE) %>% select(Freq)
+  df_temp<-data.frame(column.name=c(myname),      na.percentage=ifelse(length(operacion$Freq)==0,0,operacion$Freq[1]))
+  
+  na.summary<-rbind(na.summary,df_temp)
+}
+
+
+na.summary %>% arrange(-na.percentage) %>% filter(na.percentage >0)
+
+```
+
+Como se puede visualizar el total de valores nulos para nuestro conjunto de datos se encuentra en estas 2 variables.
+
+#### Tratamiento de veces cambio carrera
+
+Si analizamos la variable veces_cambio_carrera encontramos la siguiente información:
+
+```{r}
+summary(survey$veces._cambio_carrera)
+```
+
+Tenemos un total de 128 NA's, valores que se pueden interpretar como ceros y determinamos hacer la imputacion de convertir esos NA's a cero
+
+```{r}
+survey$veces._cambio_carrera[is.na(survey$veces._cambio_carrera)]<-0
+summary(survey$veces._cambio_carrera)
+```
+#### Tratamiento de año reprobacion
+
+Al realizar el analisis de la variable año_reprobacion encontramos la siguiente información:
+
+```{r}
+summary(survey$año_reprobacion)
+```
+
+Tenemos un total de 21 NA's, valores que se pueden interpretar como ceros al igual que nuestra variable anterior.Realizamos la misma imputacion
+
+```{r}
+survey$año_reprobacion[is.na(survey$año_reprobacion)]<-0
+summary(survey$año_reprobacion)
+```
+
+## Analisis descriptivo de datos
+
+En esta seccion realizamos una serie de transformaciones en funcion de mostrar un resumen estadístico de las variables de interés de nuestro conjunto de datos.
+
+### Asesoria Universitaria
+Realizamos un analisis descriptivo para la variable asesoría_universitaria y se obtuvieron los resultados mostrados a continuación, donde se observa la distribución de la frecuencia en las diferentes categorías.
+
+#### Resumen estadistico previo a la trasformación
+
+En primer lugar visualizamos la distribución de la frecuencia en las diferentes categorías.
+
+
+```{r echo=FALSE}
+
+df_perc<-as.data.frame(prop.table(table(survey$asesoria_universitaria)))
+df_perc<-df_perc %>% arrange(-Freq) 
+
+knitr::kable(df_perc, "pandoc")
+
+```
+
+Con la finalidad de mostrar el comportamiento que la información, se muestra el boxplot correspondiente, el histograma para ver qué tan dispersa se encuentra la distribución entre las categorías y el QQ-Plot
+
+
+```{r echo=FALSE}
+
+boxplot(df_perc$Freq)
+
+hist(df_perc$Freq)
+
+qqnorm(df_perc$Freq)
+
+```
+
+
+Tomando en cuenta los resultados y el comportamiento observado en la variable, se determinó hacer una reagrupación de los datos, eliminando la redundancia en las categorías, haciendo una reducción de la cantidad de niveles con dichas combinaciones a tres nuevas categorías
+
+1. Orientación VOAE
+2. Ninguna 
+3. Curso de inducción y Feria vocacional
+
+A continuación se realiza el tratamiento de dicha variable obteniendo el siguiente resultado:
+
+```{r transformacion1, echo=FALSE}
+
+df_perc[df_perc$Var1 %in% c("Ferias Vocacionales", "Ferias Vocacionales;Curso de induccion a la vida universitaria","Curso de induccion a la vida universitaria"),"asesoria_unah"]<-"Feria vocacional y Curso induccion"
+df_perc[df_perc$Var1 %in% c("Orientacion  VOAE", "Ferias Vocacionales;Orientacion  VOAE","Curso de induccion a la vida universitaria;Orientacion  VOAE","Ferias Vocacionales;Curso de induccion a la vida universitaria;Orientacion  VOAE"),"asesoria_unah"]<-"Orientacion VOAE"
+df_perc[df_perc$Var1 %in% c("Ferias Vocacionales;Ninguna","Ninguna"),"asesoria_unah"]<-"Ninguna"
+
+df_perc<-df_perc %>% select(Var1,asesoria_unah)
+survey<-left_join(survey,df_perc,by=c("asesoria_universitaria"="Var1"))
+
+survey<-survey[,!(names(survey) %in% c("asesoria_universitaria"))]
+names(survey)[length(names(survey))]<-"asesoria_universitaria"
+table(survey$asesoria_universitaria)
+
+```
+
+Y visualizamos nuevamente el comportamiento de la variable luego de la transformación realizada.
+Como se puede observar, con la nueva recategorización eliminamos los valores atípicos que se presentaban en el boxplot anterior, y se puede observar una mejor distribución de la información.
+
+```{r echo=FALSE}
+df_perc<-as.data.frame(prop.table(table(survey$asesoria_universitaria)))
+df_perc<-df_perc %>% arrange(-Freq) 
+
+boxplot(df_perc$Freq)
+
+hist(df_perc$Freq)
+
+qqnorm(df_perc$Freq)
+
+```
+
+
+
+### Factores no Cambio
+Realizamos un analisis descriptivo para la variable factores_no_cambio y se obtuvieron los resultados mostrados a continuación, donde se observa la distribución de la frecuencia en las diferentes categorías.
+
+#### Resumen estadistico previo a la trasformación
+Se identificaron valores vacios y se realizo la umputacion de crear una categoriallamada No aplica, para la el porcentaje de la poblacion que no aplicada en la respuesta a esta variable..
+
+```{r transformacion2, echo=FALSE}
+
+
+survey <- survey %>%
+  mutate(factores_no_cambio = as.factor(ifelse(((survey$factores_no_cambio == '' )
+                                                & (survey$pensado_cambio_carrera == 'Sí' | survey$pensado_cambio_carrera =='Tal vez')), 'No contestó', as.character(factores_no_cambio))))
+
+survey <- survey %>%
+  mutate(factores_no_cambio = as.factor(ifelse(((survey$factores_no_cambio == '')  & (survey$pensado_cambio_carrera == 'No')), 'No aplica', as.character(factores_no_cambio))))
+
+survey <- survey %>%
+  mutate(factores_no_cambio = as.factor(ifelse(((survey$factores_no_cambio == '')  & (survey$cambio_carrera == 'Sí')), 'No aplica', as.character(factores_no_cambio))))
+
+
+
+```
+
+```{r echo=FALSE}
+
+df_perc5<-as.data.frame(prop.table(table(survey$factores_no_cambio)))
+df_perc5<-df_perc5 %>% arrange(-Freq) 
+
+knitr::kable(df_perc5, "pandoc")
+
+```
+
+Con la finalidad de mostrar el comportamiento que la información, se muestra el boxplot correspondiente, el histograma para ver qué tan dispersa se encuentra la distribución entre las categorías y el QQ-Plot
+
+```{r echo=FALSE}
+
+boxplot(df_perc5$Freq)
+
+hist(df_perc5$Freq)
+
+qqnorm(df_perc5$Freq)
+
+```
+
+Tomando en cuenta los resultados y el comportamiento observado en la variable, se determinó hacer una reagrupación de los datos, al igual que la variable anterior, se genero una serie de combinaciones de categorías, esto en función de las respuestas de los encuestado y se determino eliminar la redundancia en las categorías, haciendo una reducción de la cantidad de niveles con dichas combinaciones a las siguientes categorías
+
+1. No aplica
+2. Recursos y tiempo invertidos
+3. Opinion familiar/amigos
+4. No cumple con requisitos requeridos
+5. Actualmente en proceso de cambio
+
+A continuación se realiza el tratamiento de dicha variable obteniendo el siguiente resultado:
+
+
+
+```{r echo=FALSE}
+
+df_perc5[df_perc5$Var1 %in% c("Recursos y tiempo invertidos en la carrera",
+                              "Recursos y tiempo invertidos en la carrera;Factor economico",
+                              "Tu edad;Recursos y tiempo invertidos en la carrera",
+                              "Tu edad;Recursos y tiempo invertidos en la carrera;Factor economico",
+                              "Tu edad;Recursos y tiempo invertidos en la carrera;Opinion familiar/amigos;Factor economico",
+                              "Recursos y tiempo invertidos en la carrera;Factor economico;No cuentas con todos los requisitos para el proceso.",
+                              "Recursos y tiempo invertidos en la carrera;Opinion familiar/amigos;Factor economico",
+                              "Recursos y tiempo invertidos en la carrera;Opinion familiar/amigos;Factor economico;El sistema de cambio de carrera no te lo permite",
+                              "Tu edad",
+                              "Tu edad;Recursos y tiempo invertidos en la carrera;No cuentas con todos los requisitos para el proceso."),
+         "razones_no_cambio"]<-"Recursos y tiempo invertidos"
+
+df_perc5[df_perc5$Var1 %in% c("El sistema de cambio de carrera no te lo permite",
+                              "El sistema de cambio de carrera no te lo permite;No cuentas con todos los requisitos para el proceso.",
+                              "Opinion familiar/amigos;El sistema de cambio de carrera no te lo permite;No cuentas con todos los requisitos para el proceso.",
+                              "Recursos y tiempo invertidos en la carrera;El sistema de cambio de carrera no te lo permite;No cuentas con todos los requisitos para el proceso.",
+                              "No cuentas con todos los requisitos para el proceso.",
+                              "Tu edad;El sistema de cambio de carrera no te lo permite;No cuentas con todos los requisitos para el proceso.",
+                              "Tu edad;Recursos y tiempo invertidos en la carrera;El sistema de cambio de carrera no te lo permite;No cuentas con todos los requisitos para el proceso."),
+         "razones_no_cambio"]<-"No cumple con requisitos requeridos"
+
+df_perc5[df_perc5$Var1 %in% c("Estás realizando o vas a relizar un cambio de carrera",
+                              "Estás realizando o vas a relizar un cambio de carrera;No cuentas con todos los requisitos para el proceso.",
+                              "Tu edad;Recursos y tiempo invertidos en la carrera;Estás realizando o vas a relizar un cambio de carrera",
+                              "Recursos y tiempo invertidos en la carrera;Opinion familiar/amigos;Estás realizando o vas a relizar un cambio de carrera"),
+         "razones_no_cambio"]<-"Actualmente en proceso de cambio"
+
+
+df_perc5[df_perc5$Var1 %in% c("Opinion familiar/amigos",
+                              "Opinion familiar/amigos;Factor economico",
+                              "Opinion familiar/amigos;No cuentas con todos los requisitos para el proceso.",
+                              "Recursos y tiempo invertidos en la carrera;Opinion familiar/amigos",
+                              "Tu edad;Recursos y tiempo invertidos en la carrera;Opinion familiar/amigos",
+                              "Recursos y tiempo invertidos en la carrera;Opinion familiar/amigos;No cuentas con todos los requisitos para el proceso."),
+         "razones_no_cambio"]<-"Opinion familiar/amigos"
+
+df_perc5[df_perc5$Var1 %in% c("No aplica"),
+     "razones_no_cambio"]<-"No aplica"
+
+
+df_perc5[df_perc5$Var1 %in% c("No contestó"),
+    "razones_no_cambio"]<-"No contestó"
+
+df_perc5<-df_perc5 %>% select(Var1,razones_no_cambio)
+survey<-left_join(survey,df_perc5,by=c("factores_no_cambio"="Var1"))
+survey<-survey[,!(names(survey) %in% c("factores_no_cambio"))]
+names(survey)[length(names(survey))]<-"factores_no_cambio"
+
+```
+
+```{r echo=FALSE}
+
+df_perc5<-as.data.frame(prop.table(table(survey$factores_no_cambio)))
+df_perc5<-df_perc5 %>% arrange(-Freq) 
+
+knitr::kable(df_perc5, "pandoc")
+
+```
+
+Y visualizamos nuevamente el comportamiento de la variable luego de la transformación realizada.
+Como se puede observar, hay una mejor distribución de la información, determinamos concluir que la data tiene dispersión dada la cantidad de personas en la categoría de No Aplica, sin embargo, es una categoría que al momento de analizar los factores de no cambio no es tomada en cuenta.
+
+```{r echo=FALSE}
+
+boxplot(df_perc5$Freq)
+
+hist(df_perc5$Freq)
+
+qqnorm(df_perc5$Freq)
+
+```
+
+
+## Análisis Correlacional
+
+```{r}
+rm(survey)
+
+survey <- read.csv('encuesta_transformada-D.csv', sep=",")
+```
+
+
+#### Asesoría universitaria vs Factores no cambio
+
+```{r echo=FALSE}
+
+ggplot(survey) +
+  aes(x = asesoria_universitaria, fill = factor(factores_no_cambio)) +
+  geom_bar(position = "stack") +
+  theme(axis.text.x = element_text(angle = 0))
+
+ggplot(survey) +
+  aes(x = asesoria_universitaria, fill = factor(factores_no_cambio)) +
+  geom_bar(position = "fill") +
+  theme(axis.text.x = element_text(angle = 0))
+```
+
+```{r}
+chisq.test(table(survey$asesoria_universitaria, survey$factores_no_cambio), simulate.p.value = TRUE)
+```
+
+#### Reprobado mas de dos vs Satisfacción carrera
+
+En esta correlación se quiere saber si la satisfacción de la carrera influye en la frecuencia de reprobación de clases
+
+```{r echo=FALSE}
+ggplot(survey) +
+  aes(x = reprobado_mas_de_dos, fill = factor(satisfaccion_carrera)) +
+  geom_bar(position = "stack") +
+  theme(axis.text.x = element_text(angle = 0))
+
+ggplot(survey) +
+  aes(x = reprobado_mas_de_dos, fill = factor(satisfaccion_carrera)) +
+  geom_bar(position = "fill") +
+  theme(axis.text.x = element_text(angle = 0))
+```
+
+Para determinar si las dos variables eran independientes o no, se realizó la prueba de chi cuadrado y se formularon dos hipótesis:
+
+  * H_0: Las categorías de reprobado más de dos y satisfacción carrera son independientes.
+  * H_A: Las categorías son dependientes.
+  
+El p-value obtenido mediante la prueba de chi cuadrado indica el siguiente resultado:
+
+
+```{r}
+chisq.test(table(survey$reprobado_mas_de_dos, survey$satisfaccion_carrera), simulate.p.value = TRUE)
+```
+
+Conclusión: Según nuestro p-value rechazamos nuestra hipotesis nula, por la tanto las variables son dependientes. Con este resultado podemos apreciar que sí existe una relación de satisfacción con la carrera universitaria con la variable reprobación. Este es un valor esperado puesto que se imagina que a menor porcentaje de reprobación mayor satisfacción de parte del estudiante.
+
+#### Motivación vs Satisfacción Docentes
+
+Este análisis se realiza con la finalidad de saber si la motivación y la satisfacción de carrera son variables dependientes o independientes entre si.
+
+```{r echo=FALSE}
+ggplot(survey) +
+  aes(x = motivacion, fill = factor(satisfaccion_docentes)) +
+  geom_bar(position = "stack") +
+  theme(axis.text.x = element_text(angle = 0))
+
+ggplot(survey) +
+  aes(x = motivacion, fill = factor(satisfaccion_docentes)) +
+  geom_bar(position = "fill") +
+  theme(axis.text.x = element_text(angle = 0))
+
+```
+
+Se formularon dos hipótesis:
+
+  * H_0: Las categorías de motivacion y satisfacción carrera son independientes.
+  * H_A: Las categorías son dependientes.
+
+El p-value obtenido mediante la prueba de chi cuadrado indica el siguiente resultado
+
+```{r}
+chisq.test(table(survey$motivacion, survey$satisfaccion_docentes), simulate.p.value = TRUE)
+
+```
+
+Conclusión: Según nuestro p-value no rechazamos nuestra hipotesis nula, por la tanto las variables son independientes. Esto significa que en definitiva no existe una relación entre estas dos variables y se puede apreciar que no influye en la motivación el grado de satisfacción que siente el alumno con su elección de carrera universitaria. Se puede también apreciar los diferentes cambios de valores entre los distintitos niveles de motivación y su grado de satisfacción.  Podría tomarse como que el estudiante que se encuentra altamente motivado por estudiar no necesariamente se ve afectado por su elección académica, lo que nos da un resultado bastante positivo en este caso. 
+
+## Análisis Explicativo
+
+Nuestra variable de respuesta, llamada como cambio carrera, fue obtenida directamente de nuestro dataset, asignándole un valor de “0” a los estudiantes no habían realizado un cambio de carrera y con un valor de “1” a los que si han realizado un cambio de carrera. Partiendo de nuestra variable se realiza una regresión logística para obtener aquellos factores más importantes que afectan a nuestra variable de respuesta.
+
+```{r carga_datos, message=FALSE, warning=FALSE, echo=FALSE}
+rm(survey)
+
+survey <- read.csv('encuesta_transformada_regresion.csv', sep=",")
+
+```
+
+### Tratamiento de Variable dependiente
+
+```{r tratamiento_dependiente, message=FALSE, warning=FALSE}
+survey$cambio_carrera <- as.character(survey$cambio_carrera)
+
+survey[survey$cambio_carrera %in% 'No', 'cambio_carrera'] <- "0"
+survey[survey$cambio_carrera %in% 'Sí', 'cambio_carrera'] <- "1"
+
+survey$cambio_carrera <- as.factor(survey$cambio_carrera)
+```
+
+### Selección de variables
+
+Cabe mencionar que la lista de los factores son las variables con menor correlación observada y los factores tomados en cuenta son:
+  *	lugar_residencia
+  *	horas_estudio_diario
+  *	porcentaje_clases_matematica
+  *	satisfaccion_carrera
+  *	estudia_grupo
+  *	motivacion
+  *	trabaja
+  *	edad
+  *	asesoria_universitaria
+  *	pensado_cambio_carrera
+
+```{r variables_importantes, message=FALSE, warning=FALSE}
+set <- survey[,(names(survey) %in% c(
+    'lugar_residencia',
+    'horas_estudio_diario',
+    'porcentaje_clases_matematica',
+    'satisfaccion_carrera',
+    'estudia_grupo',
+    'motivacion',
+    'trabaja',
+    'edad',
+    'asesoria_universitaria',
+    'pensado_cambio_carrera'
+  )
+)]
+```
+
+### Separar la variable dependiente
+
+```{r }
+cambio_carrera <- survey[,'cambio_carrera']
+
+```
+
+### Regresión logística
+
+Con la finalidad de conocer la importancia que tienen nuestras variables y su categorización se realizó una regresión logística, obteniendo de esta, las variables que tienen mayor impacto en función de nuestra variable dependiente. 
+
+```{r}
+model <- glm(cambio_carrera ~ ., data = set, family = "binomial")
+
+```
+
+En la siguiente tabla podemos ver las distintas variables ordenadas por el valor resultante de la regresión.
+
+### Importancia de Variables
+
+```{r}
+importances <- varImp(model)
+importances$col <- row.names(importances)
+importances <- importances %>% arrange(-Overall)
+knitr::kable(importances, "pandoc")
+
+```
+
+Podemos visualizar que las variables con mayor peso son porcentaje_clases_matematica situándose después horas_estudio_diario seguido de asesoría_universitaria. A continuación, se analizarán cada una de las variables con respecto a los porcentajes de cambio de carrera, y de esta manera lograr tener un mejor panorama del comportamiento que se da en cada categoría.
+
+#### Horas de estudio diario
+
+En el gráfico de horas de estudio, podemos apreciar que el mayor porcentaje de cambios de carrera se presenta en la categoría “0-2 horas”, considerando la proporción encontramos que los estudiantes que tienen estudios de 0 a 2 horas diarios, con el tipo de población mas propensa a realizar un cambio de carrera y esta directamente relacionada con la variable de respuesta, indicando que es un factor fuerte de importancia y a tomar en cuenta.
+
+```{r}
+
+ggplot(set) +
+  aes(x = horas_estudio_diario, fill = factor(cambio_carrera)) +
+  geom_bar(position = "stack") +
+  theme(axis.text.x = element_text(angle = 0)) +
+  scale_fill_manual(values=c("#999999","#E69F00"))
+
+```
+
+#### Asesoría universitaria
+
+En el grafico de asesoría universitaria, podemos observar que la categoría “Ninguna” que corresponde a personas que indicaron no haber recibido ninguna asesoría universitaria en cuanto a orientación vocacional, tiene el mayor porcentaje de cambios de carrera, lo cual quiere decir que las personas que no reciben orientación vocacional son mas propensas a realizar cambios de carrera. Lo cual comprueba la importancia de este factor en nuestro modelo.
+
+```{r}
+
+ggplot(set) +
+  aes(x = asesoria_universitaria, fill = factor(cambio_carrera)) +
+  geom_bar(position = "stack") +
+  theme(axis.text.x = element_text(angle = 0)) +
+  scale_fill_manual(values=c("#999999","#E69F00"))
+
+```
+
+
+#### Satisfacción carrera
+
+En el grafico de satisfacción carrera, se puede visualizar un dato muy interesante y es que, la categoría “Muy satisfecho” concentra el mayor porcentaje de cambios de carrera, concluyendo con esto que las personas que ya han realizado un cambio de carrera, indican tener una mayor satisfacción con respecto a su carrera, es decir con la carrera a la cual realizaron un cambio. En contraste con la categoría de poco satisfecho donde podemos concluir que es la población mas propensa a realizar un cambio de carrera, otro dato interesante es el porcentaje de personas poco satisfechas con su carrera, pese a haber realizado un cambio de carrera con anterioridad.
+
+```{r}
+
+ggplot(set) +
+  aes(x = satisfaccion_carrera, fill = factor(cambio_carrera)) +
+  geom_bar(position = "stack") +
+  theme(axis.text.x = element_text(angle = 0)) +
+  scale_fill_manual(values=c("#999999","#E69F00"))
+
+```
+
+#### Porcentaje Clases Matemáticas
+
+En el grafico de porcentaje de clases matemáticas, podemos apreciar que la categoría con mayor porcentaje de cambios de carrera es “30-50%”,  indicando  que las personas que han cursado alrededor del 30 a 50 % del total de las clases de matemáticas son mas propensas a realizar un cambio de carrera, Con base a estas proporciones consideramos un factor de importancia el porcentaje de avance con las clases del departamento de matemáticas para que un estudiante tome la decisión de realizar un cambio de carrera.
+
+```{r}
+
+ggplot(set) +
+  aes(x = porcentaje_clases_matematica, fill = factor(cambio_carrera)) +
+  geom_bar(position = "stack") +
+  theme(axis.text.x = element_text(angle = 0)) +
+  scale_fill_manual(values=c("#999999","#E69F00"))
+```
+
+#### Lugar de residencia
+
+En el gráfico de lugar de residencia , podemos visualizar las proporciones entre los estudiantes que no han realizado un cambio de carrera contra los que sí lo hicieron, podemos ver que en la categoría Padres se encuentra el  mayor número de incidencias de cambios de carrera, considerando esa proporción se puede interpretar que los estudiantes que viven en casa de sus padres son el tipo de población más propensa a realizar un cambio de carrera, con base a esas proporciones decimos que el lugar de residencia es un factor incidente al momento de realizar un cambio de carrera.
+
+```{r}
+
+ggplot(set) +
+  aes(x = lugar_residencia, fill = factor(cambio_carrera)) +
+  geom_bar(position = "stack") +
+  theme(axis.text.x = element_text(angle = 0)) +
+  scale_fill_manual(values=c("#999999","#E69F00"))
+```
+
+#### Edad
+
+En el grafico de edad, podemos visualizar que la categoría “21-24 años” es la categoría con mayor porcentaje de cambios de carrera, esto indica que es más probable que una persona que tenga entre 21 y 24 años realice un cambio de carrera en comparación a una persona de 28 años como lo vemos en el gráfico. Esto nos da una pauta que la edad es un factor importante en el cambio de carrera.
+
+```{r}
+
+ggplot(set) +
+  aes(x = edad, fill = factor(cambio_carrera)) +
+  geom_bar(position = "stack") +
+  theme(axis.text.x = element_text(angle = 0)) +
+  scale_fill_manual(values=c("#999999","#E69F00"))
+
+```
+
+
+#### Estudia en grupo
+
+En el grafico de estudia en grupo, se puede visualizar que la categoría “Si”  es la categoría con mayor porcentaje de cambios de carrera, con base a esta proporción podemos concluir que las personas que estudian en grupo son la población más propensa a realizar un cambio de carrera, esto se da según nuestra interpretación y como lo indican los porcentajes, que el trasfondo de estudiar en grupo lleva consigo, falta de conocimiento individual y necesidad de ayuda por parte de otros, dada esas condiciones, necesitan de un apoyo colectivo ante sus debilidades, lo cual se considera un factor muy importante e incidente en cuanto al cambio de carrera.
+
+```{r}
+
+ggplot(set) +
+  aes(x = estudia_grupo, fill = factor(cambio_carrera)) +
+  geom_bar(position = "stack") +
+  theme(axis.text.x = element_text(angle = 0)) +
+  scale_fill_manual(values=c("#999999","#E69F00"))
+
+```
+
+#### Motivación
+En el grafico de motivación, podemos apreciar que las categorías con “4” y “5”, son las categorías con mayor porcentaje de cambios de carreras, y a su vez son las categorías de motivación mas alta en una escala de “1” como baja motivación y “5” como alta motivación. Podemos concluir que los porcentajes más altos de cambios de carreras se encuentran entre las categorías más altas de motivación, indicando esto que la mayoría de las personas que han realizado un cambio de carrera sitúan su motivación en los niveles más altos.
+
+```{r}
+
+ggplot(set) +
+  aes(x = motivacion, fill = factor(cambio_carrera)) +
+  geom_bar(position = "stack") +
+  theme(axis.text.x = element_text(angle = 0)) +
+  scale_fill_manual(values=c("#999999","#E69F00"))
+
+```
+
+#### Trabaja
+
+En el grafico del factor trabaja, podemos observar que la mayor concentración de porcentaje de cambios de carrera se encuentra en la categoría “No”, indicando que las personas que no trabajan son más propensas a realizar un cambio de carrera en comparación con las que si trabajan. Siendo este un factor importante incidente en el cambio de carrera. 
+
+```{r}
+
+ggplot(set) +
+  aes(x = trabaja, fill = factor(cambio_carrera)) +
+  geom_bar(position = "stack") +
+  theme(axis.text.x = element_text(angle = 0)) +
+  scale_fill_manual(values=c("#999999","#E69F00"))
+
+```
+
+#### Pensado cambio carrera
+
+En el grafico de pensado cambio de carrera, donde se evalúa la proporción de estudiantes que no han hecho cambios de carrera pero que en algún momento han pensado en realizar alguno, podemos concluir el siguiente análisis en la categoría “No”.
+
+```{r}
+
+ggplot(set) +
+  aes(x = pensado_cambio_carrera, fill = factor(cambio_carrera)) +
+  geom_bar(position = "stack") +
+  theme(axis.text.x = element_text(angle = 0)) +
+  scale_fill_manual(values=c("#999999","#E69F00"))
+
+```
+
+
+## Solución Tecnológica
+
+Nuestra solución tecnológica tiene como objetivo brindar a los estudiantes, docentes, decanos y al jefe de facultad una manera de mejorar la toma de decisiones. Por medio de una plataforma web que pondra a disposicion a los estudiantes la opción de realizar un test vocacional en línea donde puedan obtener una respuesta que les ayude a mejorar su desenvolvimiento; y a los docentes, decanos y jefes de facultad una forma de visualizar, analizar y conocer a la población de los estudiantes para realizar intervenciones importantes en determinados momentos en la vida universitaria del estudiante.
+
+```{r echo=FALSE}
+fpath <- 'solucion-tecnologica.png' 
+im <- load.image(fpath)
+plot(im)
+
+```
+
+
+Los componentes necesarios para el funcionamiento de este portal se orientan hacia una solución en la nube y optamos por alojarlos en Microsoft Azure ya que la universidad tiene relaciones de diferentes servicios con ellos.
+
+En los diagramas anteriores incluimos dos apps services, uno para el Front-end y otro para el API; el Front-end realiza llamados HTTP al API, el cual se encargará de retornar la información necesaria que viene desde la base de datos,0 de igual manera el front-end se encarga de enviar la información de un formulario de un test vocacional al backend el cual se almacenará en una base de datos no relacional. Dentro de nuestro aplicativo va a estar manejado por roles a los cuales los usuarios tendrán diferentes permisos todo eso se asignará en la base de datos relacional y gestionado tanto por el backend como el frontend para mostrarle a los usuarios a los módulos que ellos tienen acceso según el rol.
+
+La implementación de dicha plataforma web, ayudaría a los estudiantes a tener clara sus fortalezas y debilidades, así como también a llevar un seguimiento para corroborar que sus intereses estén alineados con la carrera más a fin a sus habilidades.
